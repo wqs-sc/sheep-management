@@ -192,7 +192,13 @@ if st.button("Show Records"):
 if st.button("Export to CSV"):
     df = fetch_sheep_with_activities()
     if not df.empty:
-        df.to_csv("sheep_data.csv", index=False)
-        st.success("Data exported to sheep_data.csv.")
+        csv = df.to_csv(index=False)
+        st.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name="sheep_data.csv",
+            mime="text/csv",
+        )
+        st.success("Data is ready for download.")
     else:
         st.warning("No data to export.")
