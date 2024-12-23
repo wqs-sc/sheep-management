@@ -1,187 +1,132 @@
-import sqlite3
 import streamlit as st
 import pandas as pd
 import json
+from supabase import create_client
 
+# --- Supabase Setup ---
+SUPABASE_URL = "https://sdeqwebuathtwfugdvvr.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkZXF3ZWJ1YXRodHdmdWdkdnZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ5MjQ5MjcsImV4cCI6MjA1MDUwMDkyN30.asWjo-qcD0Dzi36rGLLLFzwzSPB3Y_JScc1RswxIGig"
 
-# --- Database Setup ---
-def connect_db():
-    conn = sqlite3.connect("sheep_management.db")
-    return conn
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
-def setup_database():
-    conn = connect_db()
-    cursor = conn.cursor()
-
-    # Sheep table for basic information
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sheep (
-            tag_id TEXT PRIMARY KEY,
-            dob_purchase TEXT,
-            sex TEXT,
-            approx_age INTEGER,
-            weight REAL,
-            body_score INTEGER,
-            feed_type TEXT
-        )
-    ''')
-
-    # Activities table for storing multiple activities
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS activities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tag_id TEXT,
-            activity TEXT,
-            details TEXT,
-            FOREIGN KEY(tag_id) REFERENCES sheep(tag_id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-
-# --- Database Functions ---
+# --- Supabase Functions ---
 def save_sheep_info(data):
-    """Save or update basic sheep information."""
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        '''
-        INSERT INTO sheep (tag_id, dob_purchase, sex, approx_age, weight, body_score, feed_type)
-        VALUES (:tag_id, :dob_purchase, :sex, :approx_age, :weight, :body_score, :feed_type)
-        ON CONFLICT(tag_id) DO UPDATE SET 
-            dob_purchase=:dob_purchase, sex=:sex, approx_age=:approx_age, weight=:weight,
-            body_score=:body_score, feed_type=:feed_type
-    ''', data)
-    conn.commit()
-    conn.close()
+    """Save or update sheep information in Supabase."""
+    response = supabase.table("sheep").upsert(data).execute()
+    if response.get("error"):
+        st.error(response["error"]["message"])
 
-
-def save_activity_info(tag_id, activity, details):
+def save_activity_info(data):
     """Save activity details for a sheep."""
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        '''
-        INSERT INTO activities (tag_id, activity, details)
-        VALUES (?, ?, ?)
-    ''', (tag_id, activity, json.dumps(details)))
-    conn.commit()
-    conn.close()
-
+    response = supabase.table("activities").insert(data).execute()
+    if response.get("error"):
+        st.error(response["error"]["message"])
 
 def fetch_sheep_with_activities():
-    """Fetch all sheep and their activities."""
-    conn = connect_db()
-    query = '''
-        SELECT s.tag_id, s.dob_purchase, s.sex, s.approx_age, s.weight, s.body_score, s.feed_type,
-               a.activity, a.details
-        FROM sheep s
-        LEFT JOIN activities a ON s.tag_id = a.tag_id
-    '''
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    return df
+    """Fetch all sheep and their activities from Supabase."""
+    response = supabase.rpc("get_sheep_with_activities").execute()  # Assuming a custom RPC function
+    if response.get("error"):
+        st.error(response["error"]["message"])
+    else:
+        return pd.DataFrame(response["data"])
 
+def fetch_single_sheep(sheep_id):
+    """Fetch a single sheep record for editing."""
+    response = supabase.table("sheep").select("*").eq("sheep_id", sheep_id).execute()
+    if response.get("error"):
+        st.error(response["error"]["message"])
+    else:
+        return response.get("data", [{}])[0]
 
 # --- Streamlit App UI ---
-setup_database()
-st.title("🐑 Sheep Management System")
+st.title("\U0001F411 Sheep Management System")
 
 # Collect Basic Information
 st.header("Enter Sheep Details")
-tag_id = st.text_input("Tag ID", placeholder="Enter a unique Tag ID")
-dob_purchase = st.date_input("Date of Birth/Purchase")
-sex = st.selectbox("Sex", ["Male", "Female"])
-approx_age = st.number_input("Approx Age (in months)", min_value=0, step=1)
-weight = st.number_input("Weight (kg)", min_value=0.0, step=0.1)
-body_score = st.slider("Body Score (1-5)", 1, 5)
-feed_type = st.selectbox("Feed in Last 20 Days", ["Pasture", "Grain", "Both"])
+sheep_id = st.text_input("Sheep ID", placeholder="Enter or select a Sheep ID to edit")
+if st.button("Load Record") and sheep_id:
+    sheep_record = fetch_single_sheep(sheep_id)
+    if sheep_record:
+        st.session_state["purchased_date"] = sheep_record.get("purchased_date")
+        st.session_state["sex"] = sheep_record.get("sex")
+        st.session_state["pregnant"] = sheep_record.get("pregnant")
+        st.session_state["weight"] = sheep_record.get("weight")
+        st.session_state["body_score"] = sheep_record.get("body_score")
+        st.session_state["age"] = sheep_record.get("age")
+        st.session_state["notes"] = sheep_record.get("notes")
+
+sheep_data = {
+    "sheep_id": sheep_id,
+    "purchased_date": st.date_input("Date of Birth/Purchase", value=st.session_state.get("purchased_date")),
+    "sex": st.selectbox("Sex", ["Male", "Female"], index=["Male", "Female"].index(st.session_state.get("sex", "Male"))),
+    "pregnant": st.checkbox("Is Pregnant?", value=st.session_state.get("pregnant", False)),
+    "weight": st.number_input("Weight (kg)", min_value=0.0, step=0.1, value=st.session_state.get("weight", 0.0)),
+    "body_score": st.slider("Body Score (1-5)", 1, 5, value=st.session_state.get("body_score", 3)),
+    "age": st.number_input("Approx Age (in years)", min_value=0, step=1, value=st.session_state.get("age", 0)),
+    "notes": st.text_area("Notes", value=st.session_state.get("notes", "")),
+}
 
 # Select Activity
-activity = st.selectbox("Activity",
-                        ["Vaccination", "Lambing", "Culling", "Sale"])
-
-# Activity-Specific Inputs
+activity = st.selectbox("Activity", ["Vaccination", "Lambing", "Culling", "Sale"])
 activity_details = {}
 
 if activity == "Vaccination":
     st.subheader("Vaccination Details")
-    for v in ["A", "B", "C", "D"]:
-        st.write(f"**Vaccination {v}**")
-        dose1 = st.date_input(f"1st Dose Date ({v})", key=f"{v}_dose1")
-        dose2 = st.date_input(f"2nd Dose Date ({v})", key=f"{v}_dose2")
-        dose3 = st.date_input(f"3rd Dose Date ({v})", key=f"{v}_dose3")
-        dose4 = st.date_input(f"4th Dose Date ({v})", key=f"{v}_dose4")
-        dose5 = st.date_input(f"5th Dose Date ({v})", key=f"{v}_dose5")
-        activity_details[v] = {
-            "dose1": str(dose1) if dose1 else "",
-            "dose2": str(dose2) if dose2 else "",
-            "dose3": str(dose3) if dose3 else "",
-            "dose4": str(dose4) if dose4 else "",
-            "dose5": str(dose5) if dose5 else ""
-        }
+    vaccination_type = st.text_input("Vaccination Type")
+    dose_sequence = st.text_input("Dose Sequence")
+    notes = st.text_area("Additional Notes")
+    activity_details = {
+        "vaccination_type": vaccination_type,
+        "dose_sequence": dose_sequence,
+        "notes": notes,
+    }
 
 elif activity == "Lambing":
     st.subheader("Lambing Details")
-    lambing_number = st.selectbox("Lambing Number", [1, 2, 3])
-    babies_born = st.number_input("Babies Born", min_value=0, step=1)
-    baby_details = []
-    for i in range(int(babies_born)):
-        st.subheader(f"Baby {i+1}")
-        baby_sex = st.selectbox(f"Sex of Baby {i+1}", ["Male", "Female"],
-                                key=f"baby_sex_{i}")
-        baby_dob = st.date_input(f"DOB of Baby {i+1}", key=f"baby_dob_{i}")
-        baby_details.append({"sex": baby_sex, "dob": str(baby_dob)})
+    lambing_number = st.number_input("Lambing Number", min_value=1, step=1)
+    num_babies = st.number_input("Number of Babies Born", min_value=0, step=1)
+    babies = []
+    for i in range(int(num_babies)):
+        baby_sex = st.selectbox(f"Sex of Baby {i+1}", ["Male", "Female"], key=f"baby_sex_{i}")
+        baby_weight = st.number_input(f"Weight of Baby {i+1} (kg)", min_value=0.0, step=0.1, key=f"baby_weight_{i}")
+        babies.append({"sex": baby_sex, "weight": baby_weight})
     activity_details = {
         "lambing_number": lambing_number,
-        "babies": baby_details
+        "num_babies": num_babies,
+        "babies": babies,
     }
 
 elif activity == "Culling":
     st.subheader("Culling Details")
-    culling_reason = st.text_area("Reason for Culling")
     culling_date = st.date_input("Culling Date")
+    reason = st.text_area("Reason for Culling")
     activity_details = {
-        "reason": culling_reason,
-        "date": str(culling_date) if culling_date else ""
+        "date": str(culling_date),
+        "reason": reason,
     }
 
 elif activity == "Sale":
     st.subheader("Sale Details")
     sale_date = st.date_input("Sale Date")
-    sale_weight = st.number_input("Sale Weight (kg)", min_value=0.0)
-    sale_price = st.number_input("Sale Price (PKR)", min_value=0.0)
+    buyer_name = st.text_input("Buyer Name")
+    sale_price = st.number_input("Sale Price (PKR)", min_value=0.0, step=0.1)
     activity_details = {
         "sale_date": str(sale_date),
-        "sale_weight": sale_weight,
-        "sale_price": sale_price
+        "buyer_name": buyer_name,
+        "sale_price": sale_price,
     }
 
 # Submit Button
 if st.button("Save Record"):
-    if not tag_id.strip():
-        st.error("Tag ID is required!")
-    else:
-        # Save basic sheep info
-        sheep_data = {
-            "tag_id": tag_id,
-            "dob_purchase": str(dob_purchase),
-            "sex": sex,
-            "approx_age": int(approx_age),
-            "weight": float(weight),
-            "body_score": int(body_score),
-            "feed_type": feed_type
-        }
-        save_sheep_info(sheep_data)
+    # Save basic sheep info
+    save_sheep_info(sheep_data)
 
-        # Save activity info
-        save_activity_info(tag_id, activity, activity_details)
-        st.success("Record saved successfully!")
+    # Save activity info
+    save_activity_info({"sheep_id": sheep_data["sheep_id"], "activity": activity, "details": activity_details})
+    st.success("Record saved successfully!")
 
 # Display Records
-st.header("📋 View All Records")
+st.header("\U0001F4CB View All Records")
 if st.button("Show Records"):
     df = fetch_sheep_with_activities()
     if df.empty:
