@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 from supabase import create_client
+import datetime
 
 # --- Supabase Setup ---
 SUPABASE_URL = "https://sdeqwebuathtwfugdvvr.supabase.co"
@@ -9,15 +10,25 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# --- Helper Functions ---
+def serialize_data(data):
+    """Ensure all data is JSON-serializable."""
+    for key, value in data.items():
+        if isinstance(value, (datetime.date, datetime.datetime)):
+            data[key] = value.isoformat()
+    return data
+
 # --- Supabase Functions ---
 def save_sheep_info(data):
     """Save or update sheep information in Supabase."""
+    data = serialize_data(data)
     response = supabase.table("sheep").upsert(data).execute()
     if response.get("error"):
         st.error(response["error"]["message"])
 
 def save_activity_info(data):
     """Save activity details for a sheep."""
+    data = serialize_data(data)
     response = supabase.table("activities").insert(data).execute()
     if response.get("error"):
         st.error(response["error"]["message"])
