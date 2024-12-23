@@ -23,31 +23,31 @@ def save_sheep_info(data):
     """Save or update sheep information in Supabase."""
     data = serialize_data(data)
     response = supabase.table("sheep").upsert(data).execute()
-    if response.get("error"):
-        st.error(response["error"]["message"])
+    if response.error:  # Attribute-style access for errors
+        st.error(response.error.message)
 
 def save_activity_info(data):
     """Save activity details for a sheep."""
-    data = serialize_data(data)
+    data = serialize_data(data)  # Ensure serialization
     response = supabase.table("activities").insert(data).execute()
-    if response.get("error"):
-        st.error(response["error"]["message"])
+    if response.error:  # Attribute-style access for errors
+        st.error(response.error.message)
 
 def fetch_sheep_with_activities():
     """Fetch all sheep and their activities from Supabase."""
     response = supabase.rpc("get_sheep_with_activities").execute()  # Assuming a custom RPC function
-    if response.get("error"):
-        st.error(response["error"]["message"])
+    if response.error:
+        st.error(response.error.message)
     else:
-        return pd.DataFrame(response["data"])
+        return pd.DataFrame(response.data)
 
 def fetch_single_sheep(sheep_id):
     """Fetch a single sheep record for editing."""
     response = supabase.table("sheep").select("*").eq("sheep_id", sheep_id).execute()
-    if response.get("error"):
-        st.error(response["error"]["message"])
+    if response.error:
+        st.error(response.error.message)
     else:
-        return response.get("data", [{}])[0]
+        return response.data[0] if response.data else {}
 
 # --- Streamlit App UI ---
 st.title("\U0001F411 Sheep Management System")
